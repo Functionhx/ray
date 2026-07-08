@@ -6082,9 +6082,12 @@ class Dataset:
     ) -> Iterable[TorchBatchType]:
         """Return an iterable over batches of data represented as Torch tensors.
 
-        This iterable yields batches of type ``Dict[str, torch.Tensor]``.
-        For more flexibility, call :meth:`~Dataset.iter_batches` and manually convert
-        your data to Torch tensors.
+        This iterable yields batches of type ``Dict[str, torch.Tensor]``. If you are
+        looking for more flexibility in the tensor conversion (e.g. casting dtypes)
+        or the batch format, try using :meth:`~ray.data.DataIterator.iter_batches`
+        directly. The converted torch tensors will automatically be loaded into GPU
+        memory if possible. Tensor loading is pipelined with downstream compute for
+        higher efficiency.
 
         Examples:
             >>> import ray
