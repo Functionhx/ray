@@ -13,6 +13,8 @@ from ray.data.util.torch_utils import (
     move_tensors_to_device,
 )
 
+CustomBatchType = Any
+
 
 class DefaultFinalizeFn:
     """finalize_fn that overlaps the host->device transfer with downstream GPU compute.
@@ -78,8 +80,8 @@ class DefaultFinalizeFn:
 
     @torch.no_grad()
     def __call__(
-        self, batch: Union[TensorBatchType, Any]
-    ) -> Union[TensorBatchReturnType, Any]:
+        self, batch: Union[TensorBatchType, CustomBatchType]
+    ) -> Union[TensorBatchReturnType, CustomBatchType]:
         if not is_tensor_batch_type(batch):
             return batch
 
