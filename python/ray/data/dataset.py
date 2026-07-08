@@ -6156,7 +6156,11 @@ class Dataset:
             local_shuffle_seed: The seed to use for the local random shuffle.
             pin_memory: [Alpha] If True, copies the tensor to pinned memory. Note that
                 `pin_memory` is only supported when using `DefaultCollateFn`.
-            compute_stream: [Alpha] # TODO (kyuds): fill in
+            compute_stream: [Alpha] CUDA stream for downstream GPU compute to run on
+                the returned tensors. Tensor loading is pipelined with downstream
+                compute for performance. To read complete data, computation must run
+                on the specified ``compute_stream``. Defaults to the current stream at
+                run time when a GPU is present, None when there is no GPU.
 
         Returns:
             An iterable over Torch Tensor batches.

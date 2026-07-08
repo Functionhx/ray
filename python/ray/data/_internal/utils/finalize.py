@@ -69,8 +69,6 @@ class DefaultFinalizeFn:
                 compute_stream must be specified.
         """
         self._device = device
-        # compute_stream will only be None when the device is CPU.
-        # It is always provided when the device is a GPU.
         self._compute_stream = compute_stream
 
         # Lazily initialized: the transfer may not be needed (e.g. CPU device), and
