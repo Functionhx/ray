@@ -496,7 +496,7 @@ class DataIterator(abc.ABC):
             An iterable over Torch Tensor batches.
         """
 
-        from ray.data._internal.utils.pipelined_finalize import PipelinedFinalizeFn
+        from ray.data._internal.utils.finalize import DefaultFinalizeFn
         from ray.train.torch import get_device
         from ray.train.utils import _in_ray_train_worker
 
@@ -548,7 +548,7 @@ class DataIterator(abc.ABC):
         else:
             raise ValueError(f"Unsupported collate function: {type(collate_fn)}")
 
-        pipelined_finalize_fn = PipelinedFinalizeFn(device)
+        finalize_fn = DefaultFinalizeFn(device)
 
         return self._iter_batches(
             prefetch_batches=prefetch_batches,
@@ -558,7 +558,7 @@ class DataIterator(abc.ABC):
             local_shuffle_buffer_size=local_shuffle_buffer_size,
             local_shuffle_seed=local_shuffle_seed,
             _collate_fn=collate_fn,
-            _finalize_fn=pipelined_finalize_fn,
+            _finalize_fn=finalize_fn,
         )
 
     def iter_tf_batches(

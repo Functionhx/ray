@@ -11,7 +11,7 @@ from ray.data.collate_fn import (
 from ray.data.util.torch_utils import move_tensors_to_device
 
 
-class PipelinedFinalizeFn:
+class DefaultFinalizeFn:
     """finalize_fn that overlaps the host->device transfer with downstream GPU compute.
 
     The transfer reuses ``move_tensors_to_device`` (which handles the
@@ -58,7 +58,9 @@ class PipelinedFinalizeFn:
         assert self._copy_stream is not None
         compute_stream = torch.cuda.current_stream(self._device)
         with torch.cuda.stream(self._copy_stream):
-            moved = move_tensors_to_device(batch, device=self._device)
+            moved = move_tensors_to_device(
+                batch, device=self._device, non_blocking=True
+            )
 
         # The outputs were allocated on the copy stream but will be read on the
         # compute stream; tell the allocator so it doesn't recycle them early.
