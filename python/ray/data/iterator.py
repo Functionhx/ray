@@ -369,6 +369,7 @@ class DataIterator(abc.ABC):
         local_shuffle_buffer_size: Optional[int] = None,
         local_shuffle_seed: Optional[int] = None,
         pin_memory: bool = False,
+        compute_stream: Optional["torch.cuda.Stream"] = None,
     ) -> Iterable["TorchBatchType"]:
         """Return a batched iterable of Torch Tensors over the dataset.
 
@@ -491,10 +492,13 @@ class DataIterator(abc.ABC):
             local_shuffle_seed: The seed to use for the local random shuffle.
             pin_memory: [Alpha] If True, copies the tensor to pinned memory. Note that
                 `pin_memory` is only supported when using `DefaultCollateFn`.
+            compute_stream: [Alpha] # TODO (kyuds) fill in
 
         Returns:
             An iterable over Torch Tensor batches.
         """
+
+        import torch
 
         from ray.data._internal.utils.finalize import DefaultFinalizeFn
         from ray.train.torch import get_device
@@ -548,7 +552,9 @@ class DataIterator(abc.ABC):
         else:
             raise ValueError(f"Unsupported collate function: {type(collate_fn)}")
 
-        finalize_fn = DefaultFinalizeFn(device)
+        if compute_stream is None and device.type == "cuda":
+            compute_stream = torch.cuda.current_stream(device=device)
+        finalize_fn = DefaultFinalizeFn(device=device, compute_stream=compute_stream)
 
         return self._iter_batches(
             prefetch_batches=prefetch_batches,

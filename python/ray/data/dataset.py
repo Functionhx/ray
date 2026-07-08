@@ -6078,6 +6078,7 @@ class Dataset:
         local_shuffle_buffer_size: Optional[int] = None,
         local_shuffle_seed: Optional[int] = None,
         pin_memory: bool = False,
+        compute_stream: Optional["torch.cuda.Stream"] = None,
     ) -> Iterable[TorchBatchType]:
         """Return an iterable over batches of data represented as Torch tensors.
 
@@ -6155,6 +6156,7 @@ class Dataset:
             local_shuffle_seed: The seed to use for the local random shuffle.
             pin_memory: [Alpha] If True, copies the tensor to pinned memory. Note that
                 `pin_memory` is only supported when using `DefaultCollateFn`.
+            compute_stream: [Alpha] # TODO (kyuds): fill in
 
         Returns:
             An iterable over Torch Tensor batches.
@@ -6173,6 +6175,7 @@ class Dataset:
             local_shuffle_buffer_size=local_shuffle_buffer_size,
             local_shuffle_seed=local_shuffle_seed,
             pin_memory=pin_memory,
+            compute_stream=compute_stream,
         )
 
     @ConsumptionAPI

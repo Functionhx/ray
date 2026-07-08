@@ -31,8 +31,13 @@ class DefaultFinalizeFn:
       the ``wait_event`` issued here actually applies to it.
     """
 
-    def __init__(self, device: Union[str, "torch.device"]):
+    def __init__(
+        self,
+        device: Union[str, "torch.device"],
+        compute_stream: Optional["torch.cuda.Stream"],
+    ):
         self._device_arg = device
+        self._compute_stream = compute_stream
 
         # Lazily initialized: the transfer may not be needed (e.g. CPU device), and
         # the copy stream must be created on the finalize thread.
@@ -56,7 +61,7 @@ class DefaultFinalizeFn:
             return move_tensors_to_device(batch, device=self._device)
 
         assert self._copy_stream is not None
-        compute_stream = torch.cuda.current_stream(self._device)
+        assert self._compute_stream is not None
         with torch.cuda.stream(self._copy_stream):
             moved = move_tensors_to_device(
                 batch, device=self._device, non_blocking=True
@@ -64,11 +69,11 @@ class DefaultFinalizeFn:
 
         # The outputs were allocated on the copy stream but will be read on the
         # compute stream; tell the allocator so it doesn't recycle them early.
-        _record_stream(moved, compute_stream)
+        _record_stream(moved, self._compute_stream)
 
         # Order the compute stream after copy is fully complete.
         copy_done = self._copy_stream.record_event()
-        compute_stream.wait_event(copy_done)
+        self._compute_stream.wait_event(copy_done)
         return moved
 
     def _is_cuda(self) -> bool:
