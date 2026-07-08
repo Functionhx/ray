@@ -520,7 +520,6 @@ class DataIterator(abc.ABC):
             # Use the appropriate device for Ray Train, or falls back to CPU if
             # Ray Train is not being used.
             device = get_device() if _in_ray_train_worker() else "cpu"
-        device = torch.device(device)
 
         if collate_fn is None:
             # The default collate_fn handles formatting and Tensor creation.
@@ -553,6 +552,7 @@ class DataIterator(abc.ABC):
         else:
             raise ValueError(f"Unsupported collate function: {type(collate_fn)}")
 
+        device = torch.device(device)
         if compute_stream is None and device.type == "cuda":
             compute_stream = torch.cuda.current_stream(device=device)
         finalize_fn = DefaultFinalizeFn(device=device, compute_stream=compute_stream)

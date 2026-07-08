@@ -17,34 +17,64 @@ from ray.data.util.torch_utils import (
 class DefaultFinalizeFn:
     """finalize_fn that overlaps the host->device transfer with downstream GPU compute.
 
-    The transfer reuses ``move_tensors_to_device`` (which handles the
-    ``TensorBatchType`` shapes and the per-column chunk concatenation), but runs it
-    inside a dedicated copy-stream context. Setting the current stream routes all of
-    ``move_tensors_to_device``'s internal CUDA ops (``torch.empty``, ``.to``,
-    ``copy_``) onto the copy stream, so the H2D copy overlaps the consumer's compute
-    on the default stream. A CUDA event then orders the default stream after the
-    copy, and ``record_stream`` keeps the caching allocator from recycling the output
-    tensors while the compute stream is still reading them.
+    time ──────────────────────────────────────────────────────────────▶
 
-    Preconditions for real overlap (not enforced here):
-    - The collated source tensors are pinned (e.g. ``DefaultCollateFn(pin_memory=True)``);
+                        (1)                    (3)
+                         ▼                      ▼
+               ┌─────────┐┌─────────┐┌─────────┐
+    transfer   │ load A  ││ load B  ││ load C  │ ─────▶  each "load" = pinned
+    stream     └─────────┘└─────────┘└─────────┘         H2D copy on the
+                    │                                    transfer stream
+                (2) │
+                    ▼
+                          ┌─────────┐┌─────────┐
+    compute               │compute A││compute B│ ─────▶   compute runs on the
+    stream                └─────────┘└─────────┘          default stream
+                                                            ▲
+                          └── overlap ──┘  load B copies while compute A runs
+
+    phase 1        phase 2                 phase 3
+    (load A only)  (compute A ‖ load B)    (compute B ‖ load C)
+
+    ─────────────────────────────────────────────────────────────────────
+    (1) wait_event: the compute stream waits until batch A is FULLY
+        transferred before it starts computing on A.
+    (2) record_stream: the compute stream marks batch A as "in use", so the
+        transfer stream will not reuse / overwrite A's buffer until compute
+        has finished with it.
+    (3) once compute on A completes, its buffer is freed and can be reused
+        by a later load.
+
+    Preconditions for real overlap:
+    - The collated source tensors are pinned (e.g. ``pin_memory=True``);
       otherwise the non-blocking H2D copy from pageable memory is effectively
       synchronous and nothing overlaps.
-    - The consumer computes on the default stream (legacy global default stream), so
-      the ``wait_event`` issued here actually applies to it.
+
+    Important Notes:
+    - The consumer MUST compute on the passed ``compute_stream``. This is important for
+      correct ordering of operations (points 1, 2, 3 in diagram).
     """
 
     def __init__(
         self,
-        device: Union[str, "torch.device"],
+        device: "torch.device",
         compute_stream: Optional["torch.cuda.Stream"],
     ):
-        self._device_arg = device
+        """Construct the DefaultFinalizeFn.
+
+        Args:
+            device: The CUDA device to transfer tensor batches to.
+            compute_stream: The CUDA stream that will run computation on the
+                transferred batches. Note that when device is a cuda device,
+                compute_stream must be specified.
+        """
+        self._device = device
+        # compute_stream will only be None when the device is CPU.
+        # It is always provided when the device is a GPU.
         self._compute_stream = compute_stream
 
         # Lazily initialized: the transfer may not be needed (e.g. CPU device), and
         # the copy stream must be created on the finalize thread.
-        self._device: Optional["torch.device"] = None
         self._copy_stream: Optional["torch.cuda.Stream"] = None
         self._init_lock = threading.Lock()
 
@@ -55,16 +85,21 @@ class DefaultFinalizeFn:
         if not is_tensor_batch_type(batch):
             return batch
 
-        self._lazy_init()
-        assert self._device is not None
-
         # CPU target: no stream/event coordination needed. move_tensors_to_device
         # still handles the chunk concatenation and the shape dispatch.
         if not self._is_cuda():
-            return move_tensors_to_device(batch, device=self._device)
+            return move_tensors_to_device(
+                batch,
+                device=self._device,
+                non_blocking=DEFAULT_TENSOR_NON_BLOCKING_TRANSFER,
+            )
+
+        # Initialize copy stream if needed.
+        self._lazy_init()
 
         assert self._copy_stream is not None
         assert self._compute_stream is not None
+
         with torch.cuda.stream(self._copy_stream):
             moved = move_tensors_to_device(
                 batch,
@@ -86,14 +121,12 @@ class DefaultFinalizeFn:
         return self._device.type == "cuda"
 
     def _lazy_init(self) -> None:
-        if self._device is not None:
+        if self._copy_stream is not None:
+            # Fast fail path without acquiring lock.
             return
         with self._init_lock:
-            if self._device is None:
-                device = torch.device(self._device_arg)
-                if device.type == "cuda":
-                    self._copy_stream = torch.cuda.Stream(device)
-                self._device = device
+            if self._copy_stream is None:
+                self._copy_stream = torch.cuda.Stream(self._device)
 
 
 def _record_stream(batch: TensorBatchReturnType, stream: "torch.cuda.Stream") -> None:
