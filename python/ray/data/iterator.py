@@ -369,7 +369,6 @@ class DataIterator(abc.ABC):
         local_shuffle_buffer_size: Optional[int] = None,
         local_shuffle_seed: Optional[int] = None,
         pin_memory: bool = False,
-        compute_stream: Optional["torch.cuda.Stream"] = None,
     ) -> Iterable["TorchBatchType"]:
         """Return a batched iterable of Torch Tensors over the dataset.
 
@@ -378,7 +377,8 @@ class DataIterator(abc.ABC):
         or the batch format, try using :meth:`~ray.data.DataIterator.iter_batches`
         directly. The converted torch tensors will automatically be loaded into GPU
         memory if possible. Tensor loading is pipelined with downstream compute for
-        higher efficiency.
+        higher efficiency. Therefore, downstream compute MUST be done on the default
+        CUDA stream when using GPUs.
 
         Examples:
             >>> import ray
@@ -495,11 +495,6 @@ class DataIterator(abc.ABC):
             local_shuffle_seed: The seed to use for the local random shuffle.
             pin_memory: [Alpha] If True, copies the tensor to pinned memory. Note that
                 `pin_memory` is only supported when using `DefaultCollateFn`.
-            compute_stream: [Alpha] CUDA stream for downstream GPU compute to run on
-                the returned tensors. Tensor loading is pipelined with downstream
-                compute for performance. To read complete data, computation must run
-                on the specified ``compute_stream``. Defaults to the current stream at
-                run time when a GPU is present, None when there is no GPU.
 
         Returns:
             An iterable over Torch Tensor batches.
@@ -559,8 +554,10 @@ class DataIterator(abc.ABC):
         else:
             raise ValueError(f"Unsupported collate function: {type(collate_fn)}")
 
+        compute_stream = None
         device = torch.device(device)
-        if compute_stream is None and device.type == "cuda":
+        if device.type == "cuda":
+            # Capture the current stream in the main thread.
             compute_stream = torch.cuda.current_stream(device=device)
         finalize_fn = DefaultFinalizeFn(device=device, compute_stream=compute_stream)
 

@@ -6078,7 +6078,6 @@ class Dataset:
         local_shuffle_buffer_size: Optional[int] = None,
         local_shuffle_seed: Optional[int] = None,
         pin_memory: bool = False,
-        compute_stream: Optional["torch.cuda.Stream"] = None,
     ) -> Iterable[TorchBatchType]:
         """Return an iterable over batches of data represented as Torch tensors.
 
@@ -6087,7 +6086,8 @@ class Dataset:
         or the batch format, try using :meth:`~ray.data.DataIterator.iter_batches`
         directly. The converted torch tensors will automatically be loaded into GPU
         memory if possible. Tensor loading is pipelined with downstream compute for
-        higher efficiency.
+        higher efficiency. Therefore, downstream compute MUST be done on the default
+        CUDA stream when using GPUs.
 
         Examples:
             >>> import ray
@@ -6159,11 +6159,6 @@ class Dataset:
             local_shuffle_seed: The seed to use for the local random shuffle.
             pin_memory: [Alpha] If True, copies the tensor to pinned memory. Note that
                 `pin_memory` is only supported when using `DefaultCollateFn`.
-            compute_stream: [Alpha] CUDA stream for downstream GPU compute to run on
-                the returned tensors. Tensor loading is pipelined with downstream
-                compute for performance. To read complete data, computation must run
-                on the specified ``compute_stream``. Defaults to the current stream at
-                run time when a GPU is present, None when there is no GPU.
 
         Returns:
             An iterable over Torch Tensor batches.
@@ -6182,7 +6177,6 @@ class Dataset:
             local_shuffle_buffer_size=local_shuffle_buffer_size,
             local_shuffle_seed=local_shuffle_seed,
             pin_memory=pin_memory,
-            compute_stream=compute_stream,
         )
 
     @ConsumptionAPI
