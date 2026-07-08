@@ -8,7 +8,10 @@ from ray.data.collate_fn import (
     TensorBatchType,
     is_tensor_batch_type,
 )
-from ray.data.util.torch_utils import move_tensors_to_device
+from ray.data.util.torch_utils import (
+    DEFAULT_TENSOR_NON_BLOCKING_TRANSFER,
+    move_tensors_to_device,
+)
 
 
 class DefaultFinalizeFn:
@@ -64,7 +67,9 @@ class DefaultFinalizeFn:
         assert self._compute_stream is not None
         with torch.cuda.stream(self._copy_stream):
             moved = move_tensors_to_device(
-                batch, device=self._device, non_blocking=True
+                batch,
+                device=self._device,
+                non_blocking=DEFAULT_TENSOR_NON_BLOCKING_TRANSFER,
             )
 
         # The outputs were allocated on the copy stream but will be read on the
